@@ -5,7 +5,7 @@ import os
 
 from . import config
 
-USERS_FILE = config.BASE_DIR / "data" / "users.json"
+USERS_FILE = config.DATA_DIR / "data" / "users.json"
 USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 

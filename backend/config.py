@@ -7,7 +7,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-WORKSPACES_DIR = BASE_DIR / "workspaces"
+
+# Pasta onde ficam os dados que precisam de sobreviver a reinícios (projetos, contas). Por
+# omissão é a própria pasta do projeto; definir DATA_DIR (ex: para um disco persistente montado,
+# como um Volume do Fly.io) faz os dados viverem aí em vez de serem apagados a cada reinício.
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR)))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+WORKSPACES_DIR = DATA_DIR / "workspaces"
 WORKSPACES_DIR.mkdir(exist_ok=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

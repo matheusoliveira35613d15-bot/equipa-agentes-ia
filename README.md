@@ -54,10 +54,11 @@ No fim, os ficheiros produzidos ficam disponíveis para download num `.zip`, e t
 - Pedidos de software mantêm-se propositadamente simples (um script Python ou uma página web
   autossuficiente) — tal como o ChatDev original, não é indicado para projetos grandes ou complexos.
 
-## Publicar online (Render ou Railway)
+## Publicar online (Render, Railway ou Fly.io)
 
 A app tem um `Dockerfile` pronto (inclui Python, Node.js e PHP, necessários para a pré-visualização).
-Passos gerais, válidos para Render ou Railway:
+
+### Render ou Railway
 
 1. Crie um repositório no GitHub com este projeto (o `.gitignore` já exclui `.env`, `.venv/` e
    `workspaces/`) e publique-o (`git push`).
@@ -70,6 +71,23 @@ Passos gerais, válidos para Render ou Railway:
      "Contas de utilizador" abaixo). Sem elas, a app fica aberta a qualquer pessoa com o link.
 4. A plataforma atribui a porta automaticamente através da variável `PORT` — o `Dockerfile` já lê isso,
    não precisa de configurar nada.
+
+### Fly.io
+
+Alternativa com arranque a frio mais rápido que o Render, e com disco persistente genuinamente
+disponível no nível gratuito (ao contrário do Render/Railway). Usa o `fly.toml` já incluído no projeto
+(ajuste o nome da app e a região se precisar — os nomes são globais em todo o Fly.io).
+
+```
+fly auth login
+fly apps create o-nome-que-escolher
+fly volumes create equipa_agentes_dados --region lhr --size 1 --app o-nome-que-escolher
+fly secrets set GEMINI_API_KEY=... REGISTO_CHAVE=... SECRET_KEY=... --app o-nome-que-escolher
+fly deploy --app o-nome-que-escolher
+```
+
+O volume fica montado em `/persist` (variável `DATA_DIR` no `fly.toml`), onde ficam guardados os
+projetos e as contas — sobrevive a reinícios e a novos deploys.
 
 ## Contas de utilizador (login)
 
@@ -94,4 +112,5 @@ persistente — cada reinício ou novo deploy apaga as pastas `workspaces/` (his
 `data/` (contas criadas, que teriam de ser recriadas). Para manter isto entre reinícios, é preciso
 adicionar um disco persistente ("Disk" no Render, "Volume" no Railway) montado em `/app`, normalmente só
 disponível em planos pagos. Sem isso, trate a versão online como algo que pode "esquecer" contas e
-projetos a cada reinício, e descarregue o `.zip` de cada projeto importante.
+projetos a cada reinício, e descarregue o `.zip` de cada projeto importante. **No Fly.io isto já não é
+um problema**, graças ao volume persistente montado em `/persist` incluído nos passos acima.
