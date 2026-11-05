@@ -66,15 +66,32 @@ Passos gerais, válidos para Render ou Railway:
 3. Defina as variáveis de ambiente do serviço (iguais às do `.env`):
    - `GEMINI_API_KEY` (obrigatória)
    - `GEMINI_MODEL`, `MAX_REVIEW_ITERATIONS` (opcionais, usam o valor por omissão se não definir)
-   - `APP_USERNAME` e `APP_PASSWORD` — **defina sempre estas duas ao publicar online**, para que só
-     quem souber a password consiga usar a app (e gastar a sua quota da API). Sem elas, a app fica
-     aberta a qualquer pessoa com o link.
+   - `REGISTO_CHAVE` e `SECRET_KEY` — **defina sempre estas duas ao publicar online** (ver secção
+     "Contas de utilizador" abaixo). Sem elas, a app fica aberta a qualquer pessoa com o link.
 4. A plataforma atribui a porta automaticamente através da variável `PORT` — o `Dockerfile` já lê isso,
    não precisa de configurar nada.
 
-**Importante sobre armazenamento:** nos planos gratuitos/básicos destes serviços, o disco não é
-persistente — cada reinício ou novo deploy apaga a pasta `workspaces/` (o histórico de projetos e os
-downloads antigos). Para manter o histórico entre reinícios, é preciso adicionar um disco persistente
-("Disk" no Render, "Volume" no Railway) montado em `/app/workspaces`, normalmente só disponível em
-planos pagos. Sem isso, trate a versão online como lugar para gerar/testar e descarregue o `.zip` de
-cada projeto importante.
+## Contas de utilizador (login)
+
+Por omissão (uso local, sem `REGISTO_CHAVE` definida) a app fica aberta, sem pedir login — como sempre
+foi. Ao definir `REGISTO_CHAVE` no `.env` (ou nas variáveis de ambiente do serviço online), a app passa a
+exigir sessão iniciada para tudo:
+
+- Cada pessoa cria a sua própria conta em `/registar`, indicando utilizador, password e a `REGISTO_CHAVE`
+  — só quem souber essa chave consegue criar conta. Reparta a chave apenas com quem quiser convidar.
+- As contas e as passwords (sempre em hash, nunca em texto simples) ficam guardadas em `data/users.json`.
+- `SECRET_KEY` assina a sessão de login — defina um valor fixo ao publicar online, senão todos têm de
+  voltar a entrar sempre que o serviço reiniciar.
+
+Gere valores fortes e únicos para as duas (nunca reutilize os mesmos em instalações diferentes):
+
+```
+python -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+**Importante sobre armazenamento:** nos planos gratuitos/básicos do Render/Railway, o disco não é
+persistente — cada reinício ou novo deploy apaga as pastas `workspaces/` (histórico de projetos) **e**
+`data/` (contas criadas, que teriam de ser recriadas). Para manter isto entre reinícios, é preciso
+adicionar um disco persistente ("Disk" no Render, "Volume" no Railway) montado em `/app`, normalmente só
+disponível em planos pagos. Sem isso, trate a versão online como algo que pode "esquecer" contas e
+projetos a cada reinício, e descarregue o `.zip` de cada projeto importante.

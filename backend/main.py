@@ -4,37 +4,35 @@ import secrets
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
-from . import config, orchestrator
+from . import auth, config, orchestrator
 from .teams import SOFTWARE_TEAM
 from .tools import preview_runner, zipper
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
-_security = HTTPBasic(auto_error=False)
-
-
-async def exigir_autenticacao(credenciais: HTTPBasicCredentials | None = Depends(_security)) -> None:
-    """Protege a app com utilizador/password quando APP_USERNAME e APP_PASSWORD estão definidos
-    (ex: quando a app está publicada online). Em uso local, sem essas variáveis, fica aberta."""
-    if not config.APP_USERNAME or not config.APP_PASSWORD:
-        return
-    utilizador_ok = credenciais is not None and secrets.compare_digest(credenciais.username, config.APP_USERNAME)
-    password_ok = credenciais is not None and secrets.compare_digest(credenciais.password, config.APP_PASSWORD)
-    if not (utilizador_ok and password_ok):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciais inválidas.",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-
-app = FastAPI(dependencies=[Depends(exigir_autenticacao)])
+app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key=config.SECRET_KEY, same_site="lax")
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+async def exigir_login(request: Request) -> None:
+    """Exige sessão iniciada quando o sistema de contas está ativo (REGISTO_CHAVE definida no
+    .env). Em uso local, sem essa variável, a app fica aberta como antes."""
+    if not config.AUTH_ATIVA:
+        return
+    if not request.session.get("user"):
+        raise HTTPException(status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/login"})
+
+
+def _pagina_auth(nome_ficheiro: str, erro: str | None = None) -> str:
+    html = (FRONTEND_DIR / nome_ficheiro).read_text(encoding="utf-8")
+    bloco_erro = f'<p class="erro-auth">{erro}</p>' if erro else ""
+    return html.replace("<!--ERRO-->", bloco_erro)
 
 
 def _workspace_de(run_id: str) -> Path | None:
@@ -54,13 +52,80 @@ def _ler_meta(workspace: Path) -> dict:
     return {}
 
 
+# --- Autenticação ---
+
+
+@app.get("/login")
+async def login_pagina(request: Request):
+    if request.session.get("user"):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(_pagina_auth("login.html"))
+
+
+@app.post("/login")
+async def login_submeter(request: Request):
+    form = await request.form()
+    username = str(form.get("username", "")).strip()
+    password = str(form.get("password", ""))
+    if auth.autenticar(username, password):
+        request.session["user"] = username
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(_pagina_auth("login.html", "Utilizador ou password incorretos."), status_code=401)
+
+
+@app.get("/registar")
+async def registar_pagina(request: Request):
+    if not config.AUTH_ATIVA:
+        return HTMLResponse("Registo não disponível nesta instalação.", status_code=404)
+    if request.session.get("user"):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(_pagina_auth("registar.html"))
+
+
+@app.post("/registar")
+async def registar_submeter(request: Request):
+    if not config.AUTH_ATIVA:
+        return HTMLResponse("Registo não disponível nesta instalação.", status_code=404)
+
+    form = await request.form()
+    username = str(form.get("username", "")).strip()
+    password = str(form.get("password", ""))
+    chave = str(form.get("chave", ""))
+
+    erro = None
+    if not username or not password:
+        erro = "Preencha utilizador e password."
+    elif len(password) < 6:
+        erro = "A password deve ter pelo menos 6 caracteres."
+    elif not secrets.compare_digest(chave, config.REGISTO_CHAVE):
+        erro = "Chave de registo incorreta."
+    elif auth.utilizador_existe(username):
+        erro = "Esse utilizador já existe."
+
+    if erro:
+        return HTMLResponse(_pagina_auth("registar.html", erro), status_code=400)
+
+    auth.criar_utilizador(username, password)
+    request.session["user"] = username
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=303)
+
+
+# --- App ---
+
+
 @app.get("/")
-async def index():
+async def index(_=Depends(exigir_login)):
     return HTMLResponse((FRONTEND_DIR / "index.html").read_text(encoding="utf-8"))
 
 
 @app.get("/download/{filename}")
-async def download(filename: str):
+async def download(filename: str, _=Depends(exigir_login)):
     destino = (config.WORKSPACES_DIR / filename).resolve()
     if config.WORKSPACES_DIR.resolve() not in destino.parents or not destino.exists():
         return HTMLResponse("Ficheiro não encontrado.", status_code=404)
@@ -68,7 +133,7 @@ async def download(filename: str):
 
 
 @app.post("/preview/{run_id}")
-async def preview(run_id: str):
+async def preview(run_id: str, _=Depends(exigir_login)):
     workspace = _workspace_de(run_id)
     if workspace is None:
         return JSONResponse({"erro": "Execução não encontrada."}, status_code=404)
@@ -89,7 +154,7 @@ async def preview(run_id: str):
 
 
 @app.get("/execucoes")
-async def listar_execucoes():
+async def listar_execucoes(_=Depends(exigir_login)):
     execucoes = []
     for item in sorted(config.WORKSPACES_DIR.iterdir(), reverse=True):
         if not item.is_dir():
@@ -111,7 +176,7 @@ async def listar_execucoes():
 
 
 @app.post("/editar/{run_id}")
-async def editar(run_id: str, request: Request):
+async def editar(run_id: str, request: Request, _=Depends(exigir_login)):
     workspace = _workspace_de(run_id)
     if workspace is None:
         return JSONResponse({"erro": "Execução não encontrada."}, status_code=404)
@@ -127,7 +192,7 @@ async def editar(run_id: str, request: Request):
             {"erro": "Edição por IA disponível apenas para projetos de software/sites, por agora."},
             status_code=400,
         )
-    linguagem, _ = deteccao
+    linguagem, _tecnologia = deteccao
 
     ficheiros_atuais = [
         {"caminho": f.name, "conteudo": f.read_text(encoding="utf-8", errors="replace")}
@@ -161,7 +226,7 @@ async def editar(run_id: str, request: Request):
 
 
 @app.get("/preview-html/{run_id}/{caminho:path}")
-async def preview_html(run_id: str, caminho: str = "index.html"):
+async def preview_html(run_id: str, caminho: str = "index.html", _=Depends(exigir_login)):
     workspace = _workspace_de(run_id)
     if workspace is None:
         return HTMLResponse("Execução não encontrada.", status_code=404)
@@ -173,6 +238,10 @@ async def preview_html(run_id: str, caminho: str = "index.html"):
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    if config.AUTH_ATIVA and not ws.session.get("user"):
+        await ws.close(code=1008)
+        return
+
     await ws.accept()
     try:
         while True:

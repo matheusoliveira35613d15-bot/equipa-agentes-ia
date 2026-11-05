@@ -1,4 +1,5 @@
 import os
+import secrets
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -14,5 +15,6 @@ MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS", "16000"))
 MAX_REVIEW_ITERATIONS = int(os.getenv("MAX_REVIEW_ITERATIONS", "3"))
 
-APP_USERNAME = os.getenv("APP_USERNAME", "")
-APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+REGISTO_CHAVE = os.getenv("REGISTO_CHAVE", "")
+SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
+AUTH_ATIVA = bool(REGISTO_CHAVE)

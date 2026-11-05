@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Criar conta — Equipa de Agentes</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<header>
+  <h1>Equipa de Agentes IA</h1>
+  <p class="subtitulo">Criar uma conta nova.</p>
+</header>
+
+<main>
+  <div class="auth-wrap">
+    <form class="auth-form" method="post" action="/registar">
+      <!--ERRO-->
+      <label for="username">Utilizador</label>
+      <input type="text" id="username" name="username" autocomplete="username" required />
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="new-password" minlength="6" required />
+
+      <label for="chave">Chave de registo</label>
+      <input type="password" id="chave" name="chave" autocomplete="off" required />
+      <p class="auth-nota">Peça a chave de registo a quem administra esta app.</p>
+
+      <button type="submit">Criar conta</button>
+    </form>
+    <p class="auth-link">Já tem conta? <a href="/login">Entrar</a></p>
+  </div>
+</main>
+</body>
+</html>
