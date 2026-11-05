@@ -288,7 +288,8 @@ form.addEventListener("submit", (e) => {
   montarSala(equipa);
   btnIniciar.disabled = true;
 
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  const protocoloWs = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${protocoloWs}//${location.host}/ws`);
   ws.onopen = () => ws.send(JSON.stringify({ tipo: "iniciar", equipa, pedido }));
   ws.onmessage = (ev) => tratarEvento(JSON.parse(ev.data));
   ws.onclose = () => {
