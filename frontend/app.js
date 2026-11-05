@@ -301,6 +301,9 @@ function tratarEvento(evento) {
     case "status":
       atualizarEstado(evento.agente, evento.estado);
       break;
+    case "heartbeat":
+      mostrarFala(evento.agente, "ainda a processar…");
+      break;
     case "mensagem":
       adicionarLog(evento.agente, evento.conteudo);
       mostrarFala(evento.agente, String(evento.conteudo));

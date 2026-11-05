@@ -14,6 +14,26 @@ async def enviar(ws: WebSocket, **evento):
     await ws.send_json(evento)
 
 
+_HEARTBEAT_SEGUNDOS = 15
+
+
+async def _com_heartbeat(ws: WebSocket, agente: str, coro):
+    """Corre uma chamada (potencialmente longa, por causa das novas tentativas do nível
+    gratuito) enquanto envia sinais periódicos pelo WebSocket — evita que proxies (ex: Render)
+    fechem a ligação por inatividade durante esperas longas, e mostra ao utilizador que a app
+    continua a trabalhar."""
+    tarefa = asyncio.ensure_future(coro)
+    try:
+        while True:
+            concluidas, _ = await asyncio.wait({tarefa}, timeout=_HEARTBEAT_SEGUNDOS)
+            if tarefa in concluidas:
+                return tarefa.result()
+            await enviar(ws, tipo="heartbeat", agente=agente)
+    except BaseException:
+        tarefa.cancel()
+        raise
+
+
 def slugify(texto: str, limite: int = 40) -> str:
     seguro = "".join(c if c.isalnum() or c in " -_" else "" for c in texto)
     seguro = seguro.strip().replace(" ", "-").lower()
@@ -61,15 +81,19 @@ async def correr_software(ws: WebSocket, pedido: str, workspace: Path, run_id: s
     equipa = SOFTWARE_TEAM
 
     await enviar(ws, tipo="status", agente="Coordenador", estado="a trabalhar")
-    decisao = await asyncio.to_thread(equipa["coordenador"].responder_json, pedido)
+    decisao = await _com_heartbeat(ws, "Coordenador", asyncio.to_thread(equipa["coordenador"].responder_json, pedido))
 
     if decisao.get("clarificar"):
         contexto = await pedir_clarificacao(ws, decisao["perguntas"])
         await enviar(ws, tipo="status", agente="Coordenador", estado="a trabalhar")
-        decisao = await asyncio.to_thread(
-            equipa["coordenador"].responder_json,
-            f"Pedido original: {pedido}\n\n{contexto}\n\n"
-            f"Responde agora com a especificação final (clarificar deve ser false).",
+        decisao = await _com_heartbeat(
+            ws,
+            "Coordenador",
+            asyncio.to_thread(
+                equipa["coordenador"].responder_json,
+                f"Pedido original: {pedido}\n\n{contexto}\n\n"
+                f"Responde agora com a especificação final (clarificar deve ser false).",
+            ),
         )
 
     linguagem = decisao.get("linguagem", "python")
@@ -78,9 +102,13 @@ async def correr_software(ws: WebSocket, pedido: str, workspace: Path, run_id: s
     await enviar(ws, tipo="status", agente="Coordenador", estado="concluído")
 
     await enviar(ws, tipo="status", agente="Programador", estado="a trabalhar")
-    resultado = await asyncio.to_thread(
-        equipa["programador"].responder_json,
-        f"Pedido original: {pedido}\n\nTecnologia: {linguagem}\n\nEspecificação do Coordenador:\n{especificacao}",
+    resultado = await _com_heartbeat(
+        ws,
+        "Programador",
+        asyncio.to_thread(
+            equipa["programador"].responder_json,
+            f"Pedido original: {pedido}\n\nTecnologia: {linguagem}\n\nEspecificação do Coordenador:\n{especificacao}",
+        ),
     )
     ficheiros = resultado.get("ficheiros", [])
     if not ficheiros:
@@ -99,7 +127,7 @@ async def correr_software(ws: WebSocket, pedido: str, workspace: Path, run_id: s
     for iteracao in range(config.MAX_REVIEW_ITERATIONS):
         await enviar(ws, tipo="status", agente="Revisor", estado="a trabalhar")
         codigo_concat = "\n\n".join(f"### {f['caminho']}\n{f['conteudo']}" for f in ficheiros)
-        revisao = await asyncio.to_thread(equipa["revisor"].responder_json, codigo_concat)
+        revisao = await _com_heartbeat(ws, "Revisor", asyncio.to_thread(equipa["revisor"].responder_json, codigo_concat))
         await enviar(ws, tipo="mensagem", agente="Revisor", conteudo=revisao.get("comentarios", ""))
         await enviar(ws, tipo="status", agente="Revisor", estado="concluído")
 
@@ -128,7 +156,7 @@ async def correr_software(ws: WebSocket, pedido: str, workspace: Path, run_id: s
             f"Resultado dos testes: {teste_feedback}\n\n"
             f"Corrige os ficheiros e devolve-os completos."
         )
-        resultado = await asyncio.to_thread(equipa["programador"].responder_json, feedback)
+        resultado = await _com_heartbeat(ws, "Programador", asyncio.to_thread(equipa["programador"].responder_json, feedback))
         ficheiros = resultado.get("ficheiros", ficheiros)
         escrever_ficheiros(workspace, ficheiros)
         await enviar(
@@ -144,15 +172,19 @@ async def correr_relatorio(ws: WebSocket, pedido: str, workspace: Path, run_id: 
     equipa = REPORT_TEAM
 
     await enviar(ws, tipo="status", agente="Coordenador", estado="a trabalhar")
-    decisao = await asyncio.to_thread(equipa["coordenador"].responder_json, pedido)
+    decisao = await _com_heartbeat(ws, "Coordenador", asyncio.to_thread(equipa["coordenador"].responder_json, pedido))
 
     if decisao.get("clarificar"):
         contexto = await pedir_clarificacao(ws, decisao["perguntas"])
         await enviar(ws, tipo="status", agente="Coordenador", estado="a trabalhar")
-        decisao = await asyncio.to_thread(
-            equipa["coordenador"].responder_json,
-            f"Pedido original: {pedido}\n\n{contexto}\n\n"
-            f"Responde agora com o esboço final (clarificar deve ser false).",
+        decisao = await _com_heartbeat(
+            ws,
+            "Coordenador",
+            asyncio.to_thread(
+                equipa["coordenador"].responder_json,
+                f"Pedido original: {pedido}\n\n{contexto}\n\n"
+                f"Responde agora com o esboço final (clarificar deve ser false).",
+            ),
         )
 
     titulo = decisao.get("titulo", "Relatório")
@@ -163,14 +195,22 @@ async def correr_relatorio(ws: WebSocket, pedido: str, workspace: Path, run_id: 
     partes_md = [f"# {titulo}\n"]
     for seccao in seccoes:
         await enviar(ws, tipo="status", agente="Analista", estado=f"a preparar: {seccao}")
-        notas = await asyncio.to_thread(
-            equipa["analista"].responder_json,
-            f"Pedido original: {pedido}\n\nSecção a preparar: {seccao}",
+        notas = await _com_heartbeat(
+            ws,
+            "Analista",
+            asyncio.to_thread(
+                equipa["analista"].responder_json,
+                f"Pedido original: {pedido}\n\nSecção a preparar: {seccao}",
+            ),
         )
         await enviar(ws, tipo="status", agente="Redator", estado=f"a escrever: {seccao}")
-        texto = await asyncio.to_thread(
-            equipa["redator"].responder_json,
-            f"Escreve a secção '{seccao}' em markdown.\n\nNotas do Analista:\n{notas.get('notas', '')}",
+        texto = await _com_heartbeat(
+            ws,
+            "Redator",
+            asyncio.to_thread(
+                equipa["redator"].responder_json,
+                f"Escreve a secção '{seccao}' em markdown.\n\nNotas do Analista:\n{notas.get('notas', '')}",
+            ),
         )
         partes_md.append(texto.get("texto_markdown", f"## {seccao}\n"))
         await enviar(ws, tipo="mensagem", agente="Redator", conteudo=f"Secção '{seccao}' escrita.")
@@ -182,7 +222,7 @@ async def correr_relatorio(ws: WebSocket, pedido: str, workspace: Path, run_id: 
 
     for iteracao in range(config.MAX_REVIEW_ITERATIONS):
         await enviar(ws, tipo="status", agente="Revisor", estado="a trabalhar")
-        revisao = await asyncio.to_thread(equipa["revisor"].responder_json, documento_md)
+        revisao = await _com_heartbeat(ws, "Revisor", asyncio.to_thread(equipa["revisor"].responder_json, documento_md))
         await enviar(ws, tipo="mensagem", agente="Revisor", conteudo=revisao.get("comentarios", ""))
         await enviar(ws, tipo="status", agente="Revisor", estado="concluído")
 
@@ -190,11 +230,15 @@ async def correr_relatorio(ws: WebSocket, pedido: str, workspace: Path, run_id: 
             break
 
         await enviar(ws, tipo="status", agente="Redator", estado="a corrigir")
-        revisao_texto = await asyncio.to_thread(
-            equipa["redator"].responder_json,
-            "Edita o relatório completo abaixo de acordo com os comentários do revisor. "
-            "Devolve o documento inteiro revisto em 'texto_markdown'.\n\n"
-            f"Comentários: {revisao.get('comentarios', '')}\n\nDocumento atual:\n{documento_md}",
+        revisao_texto = await _com_heartbeat(
+            ws,
+            "Redator",
+            asyncio.to_thread(
+                equipa["redator"].responder_json,
+                "Edita o relatório completo abaixo de acordo com os comentários do revisor. "
+                "Devolve o documento inteiro revisto em 'texto_markdown'.\n\n"
+                f"Comentários: {revisao.get('comentarios', '')}\n\nDocumento atual:\n{documento_md}",
+            ),
         )
         documento_md = revisao_texto.get("texto_markdown", documento_md)
         await enviar(ws, tipo="status", agente="Redator", estado="concluído")
