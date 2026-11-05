@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Equipa de Agentes</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<header>
+  <div class="menu-conta">
+    <button id="btn-menu" class="btn-menu" type="button" aria-label="Abrir menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <nav id="menu-dropdown" class="menu-dropdown escondido">
+      <button id="aba-novo" type="button" class="item-menu ativa">Novo pedido</button>
+      <button id="aba-projetos" type="button" class="item-menu">Os meus projetos</button>
+    </nav>
+  </div>
+  <h1>Equipa de Agentes IA</h1>
+  <p class="subtitulo">Uma pequena equipa de IA trabalha no seu pedido: software ou relatórios técnicos.</p>
+</header>
+
+<main>
+  <div id="vista-novo">
+    <section class="sala-wrap">
+      <svg id="sala" class="sala-svg" viewBox="0 0 800 460" xmlns="http://www.w3.org/2000/svg"></svg>
+    </section>
+
+    <div class="coluna-formulario">
+      <form id="form-pedido">
+        <label for="equipa">Tipo de equipa</label>
+        <select id="equipa">
+          <option value="software">Software (construir uma ferramenta)</option>
+          <option value="relatorio">Relatório / análise técnica</option>
+        </select>
+
+        <label for="pedido">O que precisa?</label>
+        <textarea id="pedido" rows="4" placeholder="Descreva o que quer construir ou o relatório que precisa..."></textarea>
+
+        <button id="btn-iniciar" type="submit">Iniciar equipa</button>
+      </form>
+
+      <section id="clarificacao" class="clarificacao"></section>
+      <section id="log" class="log"></section>
+      <section id="resultado" class="resultado"></section>
+    </div>
+  </div>
+
+  <div id="vista-projetos" class="escondido">
+    <section id="lista-projetos" class="lista-projetos"></section>
+  </div>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
